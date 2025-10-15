@@ -90,7 +90,7 @@ jobs:
         run: |
           set -e
           ls -R ./test-output
-          if [ -f ./test-output/besu/genesis.json ] || [ -f ./test-output/goQuorum/genesis.json ]; then
+          if [ -f ./test-output/*/besu/genesis.json ] || [ -f ./test-output/*/goQuorum/genesis.json ]; then
             echo "Genesis artifacts present."
           else
             echo "Expected genesis file not found." >&2
