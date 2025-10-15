@@ -22,7 +22,7 @@
   "bin": "./index.js",
   "scripts": {
     "clean": "rm -rf build output",
-    "build": "tsc",
+    "build": "tsc && node scripts/copying-template.js",
     "postbuild": "cp -R src/templates build",
     "test": "jest --verbose",
     "lint": "eslint './src/**'",
