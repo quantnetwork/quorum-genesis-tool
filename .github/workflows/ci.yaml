@@ -67,6 +67,7 @@ jobs:
         run: npm ci
 
       - name: Generate minimal config via CLI
+        working-directory: /home/runner/work/quorum-genesis-tool/quorum-genesis-tool/
         run: |
           npx quorum-genesis-tool \
             --consensus qbft \
