@@ -72,17 +72,21 @@ jobs:
         working-directory: /home/runner/work/quorum-genesis-tool/quorum-genesis-tool/
         run: |
           npx quorum-genesis-tool \
-            --consensus qbft \
-            --chainID 400 \
-            --blockperiod 5 \
-            --requestTimeout 10 \
-            --epochLength 30000 \
-            --difficulty 1 \
-            --gasLimit 0xFFFFFF \
-            --coinbase 0x0000000000000000000000000000000000000000 \
-            --validators 1 \
+            --consensus clique \
+            --validators 4 \
             --members 0 \
             --bootnodes 0 \
+            --chainID 7680 \
+            --blockperiod 5 \
+            --epochLength 30000 \
+            --requestTimeout 20 \
+            --difficulty 0x1  \
+            --gasLimit 0xe4e1c0 \
+            --coinbase 0x0000000000000000000000000000000000000000 \
+            --quickstartDevAccounts \
+            --accountPassword ${ACCOUNT_PASSWORD} \
+            --maxCodeSize 2.147483647e+09 \
+            --alloc  '{"4e59b44847b379578588920cA78FbF26c0B4956C":{"balance":"1","code":"7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe03601600081602082378035828234f58015156039578182fd5b8082525050506014600cf3","storage":{}},"b3f1656D5b2A9Cf82826D0f39866125616428213":{"balance":"1000000000000000000000000"}}' \
             --outputPath ./test-output
 
       - name: Verify expected artifacts exist
