@@ -68,20 +68,19 @@ jobs:
 
       - name: Generate minimal config via CLI
         run: |
-          ls /home/runner/work/quorum-genesis-tool/quorum-genesis-tool/
-          # npx quorum-genesis-tool \
-          #   --consensus qbft \
-          #   --chainID 400 \
-          #   --blockperiod 5 \
-          #   --requestTimeout 10 \
-          #   --epochLength 30000 \
-          #   --difficulty 1 \
-          #   --gasLimit 0xFFFFFF \
-          #   --coinbase 0x0000000000000000000000000000000000000000 \
-          #   --validators 1 \
-          #   --members 0 \
-          #   --bootnodes 0 \
-          #   --outputPath ./test-output
+          npx quorum-genesis-tool \
+            --consensus qbft \
+            --chainID 400 \
+            --blockperiod 5 \
+            --requestTimeout 10 \
+            --epochLength 30000 \
+            --difficulty 1 \
+            --gasLimit 0xFFFFFF \
+            --coinbase 0x0000000000000000000000000000000000000000 \
+            --validators 1 \
+            --members 0 \
+            --bootnodes 0 \
+            --outputPath ./test-output
 
       - name: Verify expected artifacts exist
         shell: bash
