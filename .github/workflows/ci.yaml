@@ -1,0 +1,102 @@
+name: CI
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+    branches:
+      - 'main'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit-tests:
+    name: Unit tests (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [18, 20]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - name: Install deps (clean)
+        run: npm ci
+
+      - name: Build
+        run: |
+          if npm run | grep -q " build"; then
+            npm run build
+          else
+            echo "No build script; skipping."
+          fi
+
+      - name: Test
+        run: npm test -- --ci --reporters=default --reporters=jest-junit
+        env:
+          CI: true
+
+  cli-smoke:
+    name: CLI smoke test (Ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node (LTS)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install deps (clean)
+        run: npm ci
+
+      - name: Generate minimal config via CLI
+        run: |
+          npx quorum-genesis-tool \
+            --consensus qbft \
+            --chainID 400 \
+            --blockperiod 5 \
+            --requestTimeout 10 \
+            --epochLength 30000 \
+            --difficulty 1 \
+            --gasLimit 0xFFFFFF \
+            --coinbase 0x0000000000000000000000000000000000000000 \
+            --validators 1 \
+            --members 0 \
+            --bootnodes 0 \
+            --outputPath ./test-output
+
+      - name: Verify expected artifacts exist
+        shell: bash
+        run: |
+          set -e
+          ls -R ./test-output
+          if [ -f ./test-output/besu/genesis.json ] || [ -f ./test-output/goQuorum/genesis.json ]; then
+            echo "Genesis artifacts present."
+          else
+            echo "Expected genesis file not found." >&2
+            exit 1
+          fi
+
+      - name: Upload generated artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: quorum-genesis-artifacts
+          path: test-output/
+          if-no-files-found: error
