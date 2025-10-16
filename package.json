@@ -1,10 +1,10 @@
 {
-  "name": "quorum-genesis-tool",
+  "name": "@quantnetwork/quorum-genesis-tool",
   "version": "0.2.20",
   "description": "A utility that lets developers create genesis files and node (&account) keys from ConsenSys!",
   "main": "build/index.js",
   "types": "build/typescript/index.d.ts",
-  "repository": "git@github.com:ConsenSys/quorum-genesis-tool.git",
+  "repository": "git@github.com:quantnetwork/quorum-genesis-tool.git",
   "contributors": [
     "Joshua Fernandes <3722503+joshuafernandes@users.noreply.github.com>",
     "Eric Lin <38420555+Ezzahhh@users.noreply.github.com>"
@@ -29,7 +29,7 @@
     "lintAndFix": "eslint --fix './src/**'",
     "prepare": "tsc && eslint --fix './src/**'",
     "start": "node build/index.js",
-    "publish": "npm run clean && npm run build && npm run test && npm publish --tag=latest"
+    "release:local": "npm run clean && npm run build && npm run test && npm publish --ignore-scripts --tag=latest"
   },
   "dependencies": {
     "argon2": "^0.40",
@@ -74,5 +74,9 @@
     "eslint-plugin-import": "import/export syntax",
     "eslint-config-prettier": "Turns off all rules that are unnecessary or might conflict with Prettier",
     "lint-staged": "Run linters against staged git files and don't let stuff slip into your code base!"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
   }
+
 }
