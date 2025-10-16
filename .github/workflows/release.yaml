@@ -1,13 +1,7 @@
 name: Release (GitHub Packages on main)
 
 on:
-  # push:
-  #   branches: [ main ]
-  pull_request:
-    types:
-      - opened
-      - synchronize
-      - reopened
+  push:
     branches:
       - 'main'
   workflow_dispatch:
@@ -50,7 +44,7 @@ jobs:
   publish:
     name: Publish to GitHub Packages (npm)
     needs: test
-    # if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
