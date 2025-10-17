@@ -1,14 +1,7 @@
 name: Release (GitHub Packages on main)
 
 on:
-  # push:
-  #   branches:
-  #     - 'main'
-  pull_request:
-    types:
-      - opened
-      - synchronize
-      - reopened
+  push:
     branches:
       - 'main'
   workflow_dispatch:
@@ -22,134 +15,132 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # test:
-  #   name: Tests
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #       with: { fetch-depth: 0 }
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
 
-  #     - uses: actions/setup-node@v4
-  #       with:
-  #         node-version: 20
-  #         cache: npm
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
 
-  #     - name: Install
-  #       # Provide token in case any deps live on GH Packages
-  #       env:
-  #         NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  #       run: npm ci
+      - name: Install
+        # Provide token in case any deps live on GH Packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm ci
 
-  #     - name: Build
-  #       run: npm run build --if-present
+      - name: Build
+        run: npm run build --if-present
 
-  #     - name: Test
-  #       run: npm test --if-present
-  #       env:
-  #         CI: true
+      - name: Test
+        run: npm test --if-present
+        env:
+          CI: true
 
-  # publish-npm-package:
-  #   name: Publish to GitHub Packages (npm)
-  #   needs: test
-  #   if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-  #   runs-on: ubuntu-latest
-  #   permissions:
-  #     contents: read
-  #     packages: write
-  #   env:
-  #     OWNER: ${{ github.repository_owner }}
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #       with: { fetch-depth: 0 }
+  publish-npm-package:
+    name: Publish to GitHub Packages (npm)
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      OWNER: ${{ github.repository_owner }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
 
-  #     - name: Compute lowercase owner
-  #       id: owner
-  #       run: echo "lc=$(echo '${{ env.OWNER }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+      - name: Compute lowercase owner
+        id: owner
+        run: echo "lc=$(echo '${{ env.OWNER }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
 
-  #     - name: Verify package scope matches @<owner>
-  #       id: scopecheck
-  #       shell: bash
-  #       run: |
-  #         OWNER_LC='${{ steps.owner.outputs.lc }}'
-  #         NAME=$(node -p "require('./package.json').name")
-  #         NAME_LC=$(node -p "require('./package.json').name.toLowerCase()")
-  #         echo "Package name: $NAME"
-  #         if [[ "$NAME_LC" != "@${OWNER_LC}/"* ]]; then
-  #           echo "::error::package.json name must be scoped to @${OWNER_LC} (e.g. \"@${OWNER_LC}/quorum-genesis-tool\")."
-  #           exit 1
-  #         fi
-  #         echo "name=$NAME" >> "$GITHUB_OUTPUT"
+      - name: Verify package scope matches @<owner>
+        id: scopecheck
+        shell: bash
+        run: |
+          OWNER_LC='${{ steps.owner.outputs.lc }}'
+          NAME=$(node -p "require('./package.json').name")
+          NAME_LC=$(node -p "require('./package.json').name.toLowerCase()")
+          echo "Package name: $NAME"
+          if [[ "$NAME_LC" != "@${OWNER_LC}/"* ]]; then
+            echo "::error::package.json name must be scoped to @${OWNER_LC} (e.g. \"@${OWNER_LC}/quorum-genesis-tool\")."
+            exit 1
+          fi
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
 
-  #     - name: Ensure CLI entry exists after build
-  #       shell: bash
-  #       run: |
-  #         BIN=$(node -e "const p=require('./package.json'); const b=p.bin; if(typeof b==='string'){console.log(b)} else if(b&&typeof b==='object'){console.log(Object.values(b)[0])} else {console.log('')}")
-  #         echo "bin path from package.json: $BIN"
-  #         if [ -z "$BIN" ]; then
-  #           echo "::error::No \"bin\" entry in package.json. Set it to your CLI entry (e.g. \"build/index.js\")."
-  #           exit 1
-  #         fi
-  #         # Build before checking files
-  #         npm ci
-  #         npm run build --if-present
-  #         if [ ! -f "$BIN" ]; then
-  #           echo "::error::The bin file \"$BIN\" does not exist after build. Make sure it points to your built CLI (e.g. \"build/index.js\")."
-  #           exit 1
-  #         fi
+      - name: Ensure CLI entry exists after build
+        shell: bash
+        run: |
+          BIN=$(node -e "const p=require('./package.json'); const b=p.bin; if(typeof b==='string'){console.log(b)} else if(b&&typeof b==='object'){console.log(Object.values(b)[0])} else {console.log('')}")
+          echo "bin path from package.json: $BIN"
+          if [ -z "$BIN" ]; then
+            echo "::error::No \"bin\" entry in package.json. Set it to your CLI entry (e.g. \"build/index.js\")."
+            exit 1
+          fi
+          # Build before checking files
+          npm ci
+          npm run build --if-present
+          if [ ! -f "$BIN" ]; then
+            echo "::error::The bin file \"$BIN\" does not exist after build. Make sure it points to your built CLI (e.g. \"build/index.js\")."
+            exit 1
+          fi
 
-  #     - name: Show packed contents (sanity check)
-  #       run: |
-  #         npm pack --dry-run
-  #         echo "↑ Verify the files to be published look correct."
+      - name: Show packed contents (sanity check)
+        run: |
+          npm pack --dry-run
+          echo "↑ Verify the files to be published look correct."
 
-  #     # Configure npm to publish to GitHub Packages (keeps npmjs.org as default earlier)
-  #     - uses: actions/setup-node@v4
-  #       with:
-  #         node-version: 20
-  #         registry-url: https://npm.pkg.github.com
+      # Configure npm to publish to GitHub Packages (keeps npmjs.org as default earlier)
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://npm.pkg.github.com
 
-  #     - name: Read version
-  #       id: ver
-  #       run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Read version
+        id: ver
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
 
-  #     - name: Skip if this version already exists on GitHub Packages
-  #       id: check
-  #       env:
-  #         NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  #       run: |
-  #         NAME='${{ steps.scopecheck.outputs.name }}'
-  #         VERSION='${{ steps.ver.outputs.version }}'
-  #         echo "Checking $NAME@$VERSION on GitHub Packages…"
-  #         if npm view "$NAME@$VERSION" version --registry=https://npm.pkg.github.com >/dev/null 2>&1; then
-  #           echo "already=true" >> "$GITHUB_OUTPUT"
-  #           echo "Version $VERSION already present. Skipping publish."
-  #         else
-  #           echo "already=false" >> "$GITHUB_OUTPUT"
-  #         fi
+      - name: Skip if this version already exists on GitHub Packages
+        id: check
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NAME='${{ steps.scopecheck.outputs.name }}'
+          VERSION='${{ steps.ver.outputs.version }}'
+          echo "Checking $NAME@$VERSION on GitHub Packages…"
+          if npm view "$NAME@$VERSION" version --registry=https://npm.pkg.github.com >/dev/null 2>&1; then
+            echo "already=true" >> "$GITHUB_OUTPUT"
+            echo "Version $VERSION already present. Skipping publish."
+          else
+            echo "already=false" >> "$GITHUB_OUTPUT"
+          fi
 
-  #     - name: Publish to GitHub Packages
-  #       if: steps.check.outputs.already == 'false'
-  #       env:
-  #         NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  #       run: |
-  #         # Use --ignore-scripts to avoid recursion from your "publish" lifecycle script
-  #         npm publish --ignore-scripts
-  #         echo "✅ Published ${{ steps.scopecheck.outputs.name }}@${{ steps.ver.outputs.version }}"
+      - name: Publish to GitHub Packages
+        if: steps.check.outputs.already == 'false'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Use --ignore-scripts to avoid recursion from your "publish" lifecycle script
+          npm publish --ignore-scripts
+          echo "✅ Published ${{ steps.scopecheck.outputs.name }}@${{ steps.ver.outputs.version }}"
 
-  #     - name: Outcome
-  #       run: |
-  #         if [ "${{ steps.check.outputs.already }}" = "false" ]; then
-  #           echo "✅ Release complete."
-  #         else
-  #           echo "ℹ️ Nothing to publish."
-  #         fi
-
-  # ... keep your existing 'test' and 'publish' jobs ...
+      - name: Outcome
+        run: |
+          if [ "${{ steps.check.outputs.already }}" = "false" ]; then
+            echo "✅ Release complete."
+          else
+            echo "ℹ️ Nothing to publish."
+          fi
 
   publish-docker-image:
     name: Publish Docker Repository (Docker image)
-    # needs: test
-    # if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: publish-npm-package
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
 
     permissions:
