@@ -1,0 +1,228 @@
+name: Release (GitHub Packages on main)
+
+on:
+  push:
+    branches:
+      - 'main'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write  # required to publish to GitHub Packages
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        # Provide token in case any deps live on GH Packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm ci
+
+      - name: Build
+        run: npm run build --if-present
+
+      - name: Test
+        run: npm test --if-present
+        env:
+          CI: true
+
+  publish-npm-package:
+    name: Publish to GitHub Packages (npm)
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      OWNER: ${{ github.repository_owner }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - name: Compute lowercase owner
+        id: owner
+        run: echo "lc=$(echo '${{ env.OWNER }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Verify package scope matches @<owner>
+        id: scopecheck
+        shell: bash
+        run: |
+          OWNER_LC='${{ steps.owner.outputs.lc }}'
+          NAME=$(node -p "require('./package.json').name")
+          NAME_LC=$(node -p "require('./package.json').name.toLowerCase()")
+          echo "Package name: $NAME"
+          if [[ "$NAME_LC" != "@${OWNER_LC}/"* ]]; then
+            echo "::error::package.json name must be scoped to @${OWNER_LC} (e.g. \"@${OWNER_LC}/quorum-genesis-tool\")."
+            exit 1
+          fi
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure CLI entry exists after build
+        shell: bash
+        run: |
+          BIN=$(node -e "const p=require('./package.json'); const b=p.bin; if(typeof b==='string'){console.log(b)} else if(b&&typeof b==='object'){console.log(Object.values(b)[0])} else {console.log('')}")
+          echo "bin path from package.json: $BIN"
+          if [ -z "$BIN" ]; then
+            echo "::error::No \"bin\" entry in package.json. Set it to your CLI entry (e.g. \"build/index.js\")."
+            exit 1
+          fi
+          # Build before checking files
+          npm ci
+          npm run build --if-present
+          if [ ! -f "$BIN" ]; then
+            echo "::error::The bin file \"$BIN\" does not exist after build. Make sure it points to your built CLI (e.g. \"build/index.js\")."
+            exit 1
+          fi
+
+      - name: Show packed contents (sanity check)
+        run: |
+          npm pack --dry-run
+          echo "↑ Verify the files to be published look correct."
+
+      # Configure npm to publish to GitHub Packages (keeps npmjs.org as default earlier)
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://npm.pkg.github.com
+
+      - name: Read version
+        id: ver
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Skip if this version already exists on GitHub Packages
+        id: check
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NAME='${{ steps.scopecheck.outputs.name }}'
+          VERSION='${{ steps.ver.outputs.version }}'
+          echo "Checking $NAME@$VERSION on GitHub Packages…"
+          if npm view "$NAME@$VERSION" version --registry=https://npm.pkg.github.com >/dev/null 2>&1; then
+            echo "already=true" >> "$GITHUB_OUTPUT"
+            echo "Version $VERSION already present. Skipping publish."
+          else
+            echo "already=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish to GitHub Packages
+        if: steps.check.outputs.already == 'false'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Use --ignore-scripts to avoid recursion from your "publish" lifecycle script
+          npm publish --ignore-scripts
+          echo "✅ Published ${{ steps.scopecheck.outputs.name }}@${{ steps.ver.outputs.version }}"
+
+      - name: Outcome
+        run: |
+          if [ "${{ steps.check.outputs.already }}" = "false" ]; then
+            echo "✅ Release complete."
+          else
+            echo "ℹ️ Nothing to publish."
+          fi
+
+  publish-docker-image:
+    name: Publish Docker Repository (Docker image)
+    needs: publish-npm-package
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: read   # pull from GitHub Packages during docker build
+      id-token: write  # for AWS OIDC
+
+    env:
+      AWS_REGION: us-east-1                 # <--- change if needed
+      ECR_REPOSITORY: quantnetwork/quorum-k8s-hooks      # <--- your ECR repo name
+      PACKAGE_SCOPE: "@quantnetwork"
+      PACKAGE_NAME: "@quantnetwork/quorum-genesis-tool"
+
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - name: Read package version
+        id: ver
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Verify package exists on GitHub Packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          V='${{ steps.ver.outputs.version }}'
+          echo "Checking ${{ env.PACKAGE_NAME }}@$V..."
+          if ! npm view "${{ env.PACKAGE_NAME }}@$V" version --registry=https://npm.pkg.github.com >/dev/null 2>&1; then
+            echo "::error::${{ env.PACKAGE_NAME }}@$V not found on GitHub Packages. Did the publish step run?"
+            exit 1
+          fi
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Ensure ECR repository exists
+        run: |
+          set -euo pipefail
+          : "${ECR_REPOSITORY:?ECR_REPOSITORY not set}"
+
+          if aws ecr describe-repositories --repository-names "$ECR_REPOSITORY" >/dev/null 2>&1; then
+            echo "ECR repository '$ECR_REPOSITORY' already exists."
+          else
+            echo "Creating ECR repository '$ECR_REPOSITORY'."
+            aws ecr create-repository --repository-name "$ECR_REPOSITORY" >/dev/null
+            echo "Created ECR repository '$ECR_REPOSITORY'."
+          fi
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set image tags
+        id: tags
+        run: |
+          REG="${{ steps.ecr.outputs.registry }}"
+          IMG_VERSION="$REG/${{ env.ECR_REPOSITORY }}:${{ steps.ver.outputs.version }}"
+          IMG_LATEST="$REG/${{ env.ECR_REPOSITORY }}:latest"
+          echo "version_tag=$IMG_VERSION" >> "$GITHUB_OUTPUT"
+          echo "latest_tag=$IMG_LATEST" >> "$GITHUB_OUTPUT"
+          echo "Will push: $IMG_VERSION and $IMG_LATEST"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ${{ steps.tags.outputs.version_tag }}
+            ${{ steps.tags.outputs.latest_tag }}
+          build-args: |
+            SCOPE=${{ env.PACKAGE_SCOPE }}
+            PACKAGE=${{ env.PACKAGE_NAME }}
+            VERSION=${{ steps.ver.outputs.version }}
+          secrets: |
+            "npm_token=${{ secrets.GITHUB_TOKEN }}"
+

@@ -1,28 +1,109 @@
 name: CI
 
 on:
-  push:
-    branches: [ '*' ]
   pull_request:
-    branches: [ master ]
+    types:
+      - opened
+      - synchronize
+      - reopened
+    branches:
+      - 'main'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
-
+  unit-tests:
+    name: Unit tests (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
-
     strategy:
+      fail-fast: false
       matrix:
-        node-version: [16.x]
-
+        node: [18, 20]
     steps:
-      - uses: actions/checkout@v2
-      - name: Use Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v2
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
-      - name: Install dependencies
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - name: Install deps (clean)
         run: npm ci
-      - run: npm run build --if-present
-      # - run: npm run lint
-      - run: npm test
+
+      - name: Build
+        run: |
+          if npm run | grep -q " build"; then
+            npm run build
+          else
+            echo "No build script; skipping."
+          fi
+
+      - name: Test
+        run: npm test -- --ci --reporters=default --reporters=jest-junit
+        env:
+          CI: true
+
+  cli-smoke:
+    name: CLI smoke test (Ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node (LTS)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install deps (clean)
+        run: |
+          npm ci
+          npm run build
+
+      - name: Generate minimal config via CLI
+        working-directory: /home/runner/work/quorum-genesis-tool/quorum-genesis-tool/
+        run: |
+          npx quorum-genesis-tool \
+            --consensus clique \
+            --validators 4 \
+            --members 0 \
+            --bootnodes 0 \
+            --chainID 7680 \
+            --blockperiod 5 \
+            --epochLength 30000 \
+            --requestTimeout 20 \
+            --difficulty 0x1  \
+            --gasLimit 0xe4e1c0 \
+            --coinbase 0x0000000000000000000000000000000000000000 \
+            --quickstartDevAccounts \
+            --accountPassword ${ACCOUNT_PASSWORD} \
+            --maxCodeSize 2.147483647e+09 \
+            --alloc  '{"4e59b44847b379578588920cA78FbF26c0B4956C":{"balance":"1","code":"7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe03601600081602082378035828234f58015156039578182fd5b8082525050506014600cf3","storage":{}},"b3f1656D5b2A9Cf82826D0f39866125616428213":{"balance":"1000000000000000000000000"}}' \
+            --outputPath ./test-output
+
+      - name: Verify expected artifacts exist
+        shell: bash
+        run: |
+          set -e
+          ls -R ./test-output
+          if [ -f ./test-output/*/besu/genesis.json ] || [ -f ./test-output/*/goQuorum/genesis.json ]; then
+            echo "Genesis artifacts present."
+          else
+            echo "Expected genesis file not found." >&2
+            exit 1
+          fi
+
+      - name: Upload generated artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: quorum-genesis-artifacts
+          path: test-output/
+          if-no-files-found: error
